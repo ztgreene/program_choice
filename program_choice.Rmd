@@ -1,0 +1,195 @@
+---
+title: "Preixcting Program CHoice of Students"
+author: "Zac Greene"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output:
+  pdf_document: 
+    fig_crop: no
+    keep_tex: yes
+    latex_engine: xelatex
+    toc: yes
+  html_document:
+    toc: yes
+---
+```{r setUp, message=FALSE, warning=FALSE, highlight=TRUE}
+rm(list = ls()) # clear memory
+
+# Packages used in this analysis
+library(tidyverse)
+library(lme4)
+library(MuMIn)
+library(DT)
+library(nnet)
+library(MASS)
+
+df_pc <- read.csv(file = "ProgramChoice.csv")
+```
+
+#Part A
+##AIC Analysis
+An initial model was fit using all of the four predictor variables (sex of the student, their socio-economic status, and their mathematical and writing ability).
+Interaction terms were not considered.
+An AIC analysis was used to compare the nested models.
+```{r results='hide'}
+# Full model fit using all predictor variables
+fit_1 <- multinom(Prog ~ 1 + Sex + SES + Writing + Math, data = df_pc, na.action = na.fail)
+
+# 'dredge' used to compare models (output hidden as it is not pertinent)
+df_AIC <- dredge(fit_1, rank = "AIC")
+
+# Below formats AIC table for readability
+names(df_AIC)[1] <- "1"                  # rename the first column
+df_AIC$"1" <- "+"                        # make all first column "+"
+df_AIC$Sex[!is.na(df_AIC$Sex)] <- "+"    # replace numbers with "+"
+df_AIC$SES[!is.na(df_AIC$SES)] <- "+"    # replace numbers with "+"
+df_AIC$Writing[!is.na(df_AIC$Writing)] <- "+"    # replace numbers with "+"
+df_AIC$Math[!is.na(df_AIC$Math)] <- "+"    # replace numbers with "+"
+
+df_AIC$logLik <- round(df_AIC$logLik, 2) # round numbers to 2dp
+df_AIC$AIC <- round(df_AIC$AIC, 2)   # round numbers to 2dp
+df_AIC$delta <- round(df_AIC$delta, 2)   # round numbers to 2dp
+df_AIC$weight <- round(df_AIC$weight, 2)   # round numbers to 2dp
+
+#filter AIC table to show models with delta < 6
+df_AIC <- filter(df_AIC, delta < 6) # display the AIC table for delta < 6
+```
+```{r}
+show(df_AIC)
+```
+The AIC table above has been filtered to show only models with a delta of less than six.
+Given 'Math' - a student's mathematical ability - is included in every model, it suggest that it is the best predictor of a student's study program.
+If we discount more complex models from the table that have simpler nested models with lower delta, we are left with four models:
+
+1 + Math + SES + Writing (our best model),  
+1 + Math + Writing (delta = 0.64),  
+1 + Math + SES (delta = 1.56),  
+1 + Math (delta = 2.5).  
+
+According to the AIC analysis, the model including mathematical ability, socio-economic status, and writing ability (1 + Math + SES + Writing) was deemed the best model.
+
+Our best model was fit, and a summary can be seen below.
+```{r}
+fit_2 <- multinom(Prog ~ 1 + Math + Writing + SES, data = df_pc)
+
+# make reference SES "middle"
+df_pc$SES <- relevel(df_pc$SES, ref="middle")
+# make reference program "general
+df_pc$Prog <- relevel(df_pc$Prog, ref="general")
+summary(fit_2)
+```
+The summary above indicates that higher socio-economic status, and higher mathematical and writing ability were all positively associated with those students choosing academic study programs.
+Further, lower socio-economic status, mathematical and writing ability were associated with students choosing vocation study programs.
+
+
+#Part B
+#Model Accuracy
+Our best model was used to predict student program choices, and a confusion matrix was produced.
+```{r}
+df_pc$predicted <- predict(fit_2)
+# confusion matrix
+table(df_pc$Prog, df_pc$predicted) # 0.65 correct
+
+```
+The correct classifcation rate was calculated to be 65%, with an error rate of 35%.
+```{r}
+# correct classification rate
+mean(df_pc$Prog == df_pc$predicted)
+
+# classification error rate
+mean(df_pc$Prog != df_pc$predicted)
+```
+Whilst it could be argued a 65% correct classification rate is reasonable, the confusion matrix can provide us with more insight.
+It seems like our model did significantly better when it came to predicting the choice of those students entering an academic program; it correctly predicted 90/115 (78.26%).
+The model also correctly predicted the choice of 31/50 (62%) students entering vocational study programs.
+However, the model did extremely poorly (9/45 - 20%!) when it came to those students entering general study programs.
+
+```{r}
+ggplot(df_pc, aes(x = Math, y = predicted)) +
+  labs(title = "Student mathematical ability vs program choice",
+       x = "Student Mathematics score",
+       y = "Choice of study program") +
+  geom_point() +
+  theme_bw()
+```
+The plot above of students' mathematics scores vs program choice confirms our models suggestions: that students with higher mathematical ability tend to choose academic study programs, and those with lower score tend to choose vocational programs.
+This plot might also provide an explanation as to why our model incorrectly predicted the majority of 'general' students: the scores of these students tended to span the lower end of the scores of 'academic' students and the scores of 'vocational' students.
+```{r}
+ggplot(df_pc, aes(x = Writing, y = predicted)) +
+  labs(title = "Student writing ability vs program choice",
+       x = "Student writing score",
+       y = "Choice of study program") +
+  geom_point() +
+  theme_bw()
+```
+The plot above of student writing ability shows a weaker relationship (than mathematical ability), with the scores of 'general' students being largely indistinguishable from either of the other cohorts.
+Again, this might explain the inability of our model to predict the choices of 'general' students.
+
+#Part C
+##A Single Predictor Model
+All of the models from our AIC analysis table in Part A contained 'Math' as a predictor variable, indicating mathematical ability is the best predictor (of the variables) for choice of program.
+Another model was re-fit contained only 'Math' as a predictor variable.
+```{r}
+# Fitting with only 'Math'
+fit_3 <- multinom(Prog ~ 1 + Math, data = df_pc)
+df_pc$predicted <- predict(fit_3)
+summary(df_pc)
+
+table(df_pc$Prog, df_pc$predicted)
+mean(df_pc$Prog == df_pc$predicted) # 0.6 correct
+mean(df_pc$Prog != df_pc$predicted)
+```
+We can see that our simple model correctly predicts 60% of student program choices - only marginally worse than our more complex model.
+However, the problem of predicting 'general' program choices is even more evident - our simple model predicts zero choices of 'general' programs.
+It seems that our suspicions from 'Part B' might be confirmed; the model struggles to predict the choice of students with moderate (40-50) mathematics scores because they could belong to either of the other cohorts.
+
+```{r results = 'hide'}
+# Plotting a continuous line for math
+predict(fit_3, type = "probs")
+
+# generate 100 math values based on observed range
+math_scores <- seq(from = min(df_pc$Math), to = max(df_pc$Math), length.out = 100)
+
+# create a data frame with the scores to calculate the probs
+df_scores <- data.frame(Math = math_scores) # create a data frame with the scores
+
+# create a matrix with the predicted probabilities
+m_probs <- predict(fit_3, newdata = df_scores, type = "probs")
+
+df_probs <- as.data.frame(m_probs) # convert matrix to a data frame for plotting
+
+
+names(df_probs) <- levels(df_pc$Prog) # add column names to the data frame
+df_probs$scores <- df_scores$Math # add the score information to the data frame
+
+
+df_plot <- gather(df_probs, key = Prog, value = probability, 1:3)
+
+# make reference SES "middle"
+df_plot$Prog <- factor(df_plot$Prog)
+df_plot$Prog <- relevel(df_plot$Prog, ref="general")
+
+```
+```{r}
+# plot predicted probabilities
+ggplot(df_plot, aes(x = scores, y = probability, color = Prog)) +
+  geom_line() +
+  labs(title = "Probability of student choosing study program given mathematics score",
+       x = "Student mathematics score",
+       y = "Probability of choosing program")
+```
+The plot above provides a visual indication of our model's predictions; higher mathematics scores are strongly associated with students choosing academic programs.
+```{r}
+# plot predicted probabilities
+ggplot(df_plot, aes(x = scores, y = probability, fill = Prog)) +
+  geom_area() +
+  labs(title = "Probability of student choosing study program given mathematics score",
+       x = "Student mathematics score",
+       y = "Probability of choosing program")
+```
+The alternative plot above suggests that our models predicts students with a mathematics of around 45 are almost equally likely to choose any of the three types of study programs.
+However, as mathematics score increases, the probability of a student choosing an academic program increases dramatically. Students with scores above 65 are predicted to almost never choose a vocational or general study program.
+
+
+
+
+
